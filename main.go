@@ -14,50 +14,59 @@ type Product struct {
 	SalesPrice float32 `json:"sales_price"`
 }
 
+type ProductResponse struct {
+	Name       string  `json:"name"`
+	ProductId  string  `json:"product_id"`
+	SalesPrice float32 `json:"sales_price"`
+	Status     string  `json:"status"`
+}
+
 func ValidateProduct(c *gin.Context) {
 	var json Product
 	if err := c.ShouldBindJSON(&json); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		panic(err)
 	}
 
-	var url = "localhost:8080/products/" + json.ProductId
+	var url = "http://wiremock:8080/v1/products/" + json.ProductId
 	resp, err := http.Get(url)
 
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"err": err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"err": err})
+		return
 	}
 
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"err": err, "message": "NOT FOUND"})
+		return
+	}
+
 	data, _ := ioutil.ReadAll(resp.Body)
 
-	var jsonResponse struct {
-		Name       string  `json:"name"`
-		ProductId  string  `json:"product_id"`
-		SalesPrice float32 `json:"sales_price"`
-		Status     string  `json:"status"`
+	jsonResponse := new(ProductResponse)
+
+	if strings.Contains(string(data), "In Stock") {
+		jsonResponse = populateResponse(json, "valid")
+	} else {
+		jsonResponse = populateResponse(json, "invalid")
 	}
 
-	if strings.Contains(string(data), "status: \"valid\"") {
-		populateResponse(jsonResponse, json, "valid")
-	} else {
-		populateResponse(jsonResponse, json, "invalid")
-	}
+	c.JSON(200, gin.H{"body": *jsonResponse})
 }
 
 func populateResponse(
-	jsonResponse struct {
-		Name       string  `json:"name"`
-		ProductId  string  `json:"product_id"`
-		SalesPrice float32 `json:"sales_price"`
-		Status     string  `json:"status"`
-	},
-	json Product, status string) {
+	json Product, status string) *ProductResponse {
 
-	jsonResponse.Name = json.Name
-	jsonResponse.ProductId = json.ProductId
-	jsonResponse.SalesPrice = json.SalesPrice
-	jsonResponse.Status = status
+	response := new(ProductResponse)
+
+	response.Name = json.Name
+	response.ProductId = json.ProductId
+	response.SalesPrice = json.SalesPrice
+	response.Status = status
+
+	return response
 }
 
 func main() {
